@@ -3,9 +3,9 @@
 
 rosbag_details.py
 
-Author:  Johan M. V. Bruun
-Date:    2024-05-09
-License: MIT
+Author:   Johan M. V. Bruun
+Date:     2024-05-09
+License:  MIT
 
 """
 
