@@ -1,0 +1,6 @@
+# rosbag-image-tools requirements.txt
+
+numpy>=1.26.4
+opencv-python-headless>=4.9.0.80
+rosbags>=0.10.0
+rosbags-image>=0.9.2
