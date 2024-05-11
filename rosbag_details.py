@@ -45,7 +45,7 @@ class RosbagDetailsParameters:
         description = "Show details about a rosbag, especially about stereo image topics."
         parser = argparse.ArgumentParser(description=description)
         parser.add_argument("rosbag_path", nargs="?", type=Path, help="Rosbag to show details of.")
-        parser.add_argument("-v", "--verbose", help="show verbose output", action="store_true")
+        parser.add_argument("-v", "--verbose", action="store_true", help="show verbose output")
         args = parser.parse_args(argv)
 
         # If no rosbag path is given, print the help message and exit
