@@ -3,7 +3,7 @@
 
 rosbag_details.py
 
-Author:   Johan M. V. Bruun
+Author:   Johan Musaeus Bruun
 Date:     2024-05-09
 License:  MIT
 
@@ -18,8 +18,9 @@ from typing import Dict, List, Tuple, cast
 
 import numpy as np
 
-from rosbags.interfaces import Connection
 from rosbags.highlevel import AnyReader
+from rosbags.highlevel.anyreader import AnyReaderError
+from rosbags.interfaces import Connection
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.stores.ros1_noetic import sensor_msgs__msg__CameraInfo, sensor_msgs__msg__Image
 
@@ -43,7 +44,8 @@ class RosbagDetailsParameters:
     @staticmethod
     def from_cli_args(argv: List[str]) -> "RosbagDetailsParameters":
         description = "Show details about a rosbag, especially about stereo image topics."
-        parser = argparse.ArgumentParser(description=description)
+        epilog = "Copyright \N{COPYRIGHT SIGN} Johan Musaeus Bruun, 2024. License: MIT."
+        parser = argparse.ArgumentParser(description=description, epilog=epilog)
         parser.add_argument("rosbag_path", nargs="?", type=Path, help="Rosbag to show details of.")
         parser.add_argument("-v", "--verbose", action="store_true", help="show verbose output")
         args = parser.parse_args(argv)
@@ -77,19 +79,39 @@ class StereoImagePairWithCamInfo:
 
 
 def main():
+    print("##################")
+    print("# Rosbag Details #")
+    print("##################")
+    print("")
     # Obtain parameters from CLI
     params = RosbagDetailsParameters.from_cli_args(sys.argv[1:])
     # Print rosbag details
-    print_rosbag_details(params.rosbag_path)
+    print_rosbag_details_and_handle_exceptions(params)
     return
 
 
 ########################################################################################################################
 
 
-def print_rosbag_details(rosbag_path: Path) -> None:
+def print_rosbag_details_and_handle_exceptions(params: RosbagDetailsParameters) -> None:
+    try:
+        print_rosbag_details(params)
+    except AnyReaderError as e:
+        if str(e) == "File magic is invalid.":
+            print(f"ERROR: Invalid rosbag:\n  '{params.rosbag_path}'")
+        else:
+            print(f"ERROR: {e}")
+    except (ValueError, FileNotFoundError) as e:
+        print(f"ERROR: {e}")
+    print("")
+
+
+########################################################################################################################
+
+
+def print_rosbag_details(params: RosbagDetailsParameters) -> None:
     # Expand a potential tilda and resolve the path
-    rosbag_path = rosbag_path.expanduser().resolve()
+    rosbag_path = params.rosbag_path.expanduser().resolve()
     if not rosbag_path.is_file():
         raise FileNotFoundError(f"Rosbag not found: \"{rosbag_path}\"")
 
@@ -142,7 +164,6 @@ def print_rosbag_details(rosbag_path: Path) -> None:
         for remaining_topic in remaining_topics:
             print("")
             print_remaining_topic_details(remaining_topic, reader, col_width, indent=double_indent)
-        print("")
     return
 
 

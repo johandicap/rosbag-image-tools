@@ -3,7 +3,7 @@
 
 rosbag_thumbnail.py
 
-Author:   Johan M. V. Bruun
+Author:   Johan Musaeus Bruun
 Date:     2024-05-09
 License:  MIT
 
@@ -19,6 +19,7 @@ import cv2
 import numpy as np
 
 from rosbags.highlevel import AnyReader
+from rosbags.highlevel.anyreader import AnyReaderError
 from rosbags.image import message_to_cvimage
 from rosbags.typesys import Stores, get_typestore
 from rosbags.typesys.stores.ros1_noetic import sensor_msgs__msg__Image
@@ -47,8 +48,9 @@ class RosbagThumbnailParameters:
     @staticmethod
     def from_cli_args(argv: List[str]) -> "RosbagThumbnailParameters":
         description = "Create a thumbnail of an image topic in a rosbag."
-        parser = argparse.ArgumentParser(description=description)
-        parser.add_argument("rosbag_path", nargs="?", type=Path, help="Rosbag to show details of.")
+        epilog = "Copyright \N{COPYRIGHT SIGN} Johan Musaeus Bruun, 2024. License: MIT."
+        parser = argparse.ArgumentParser(description=description, epilog=epilog)
+        parser.add_argument("rosbag_path", nargs="?", type=Path, help="Rosbag to save a thumbnail of.")
         parser.add_argument("-t", "--topic", default="", type=str,
                             help="Image topic to export. Defaults to first image topic found in the bag.")
         parser.add_argument("-f", "--frame", default=1, type=int,
@@ -86,11 +88,31 @@ class RosbagThumbnailParameters:
 
 
 def main():
+    print("####################")
+    print("# Rosbag Thumbnail #")
+    print("####################")
+    print("")
     # Obtain parameters from CLI
     params = RosbagThumbnailParameters.from_cli_args(sys.argv[1:])
     # Export rosbag thumbnail
-    export_rosbag_thumbnail(params)
+    export_rosbag_thumbnail_and_handle_exceptions(params)
     return
+
+
+########################################################################################################################
+
+
+def export_rosbag_thumbnail_and_handle_exceptions(params: RosbagThumbnailParameters) -> None:
+    try:
+        export_rosbag_thumbnail(params)
+    except AnyReaderError as e:
+        if str(e) == "File magic is invalid.":
+            print(f"ERROR: Invalid rosbag:\n  '{params.rosbag_path}'")
+        else:
+            print(f"ERROR: {e}")
+    except (ValueError, FileNotFoundError) as e:
+        print(f"ERROR: {e}")
+    print("")
 
 
 ########################################################################################################################
@@ -137,7 +159,7 @@ def select_image_topic(reader: AnyReader, desired_topic: str = "") -> str:
 
     # If no image topics are found in the bag, raise an exception
     if len(image_topics) == 0:
-        raise ValueError("No image topics found in the given bag.")
+        raise ValueError(f"No image topics found in the given bag:\n  '{reader.paths[0]}'")
 
     # If desired topic is empty, choose first image topic
     if desired_topic == "":
@@ -242,7 +264,7 @@ def downscale_rgb_image(rgb_image: np.ndarray, pct: int, width: int, height: int
 def determine_output_path(rosbag_path: Path, image_format: str) -> Path:
     if image_format not in ["jpg", "png"]:
         raise ValueError(f"Image format should be either 'jpg' or 'png', not '{image_format}'.")
-    output_path = rosbag_path.parent / f"thumbnail.{image_format}"
+    output_path = rosbag_path.with_suffix(f".{image_format}")
     return output_path
 
 
