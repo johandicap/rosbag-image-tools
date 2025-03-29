@@ -206,10 +206,16 @@ def print_topics_and_types(reader: AnyReader, col_width: int, indent: str = ""):
     for i, (topic, topic_info) in enumerate(zip(topics, topic_info_list), start=1):
         subheader = "Topics:" if i == 1 else ""
         msg_type = f"[{topic_info.msgtype}]"
-        msgs_entry = f"{topic_info.msgcount} msgs"
-        hz = compute_hz_for_topic(reader, topic)
-        hz_entry = f"{hz:.1f} Hz"
-        print(f"{indent}{subheader:<{col_width}}{topic:<{tow}}  {msg_type:<{tyw}}  {msgs_entry} @ {hz_entry}")
+        msgs_entry = f"{topic_info.msgcount:>6} msgs"
+
+        # If 1 connection, compute hz, else write number of connections
+        num_connections = len(topic_info.connections)
+        if num_connections == 1:
+            hz = compute_hz_for_topic(reader, topic)
+            hz_entry = f" @ {hz:.1f} Hz" if not np.isnan(hz) else ""
+        else:
+            hz_entry = f" ({num_connections} connections)"
+        print(f"{indent}{subheader:<{col_width}}{topic:<{tow}}  {msg_type:<{tyw}} {msgs_entry}{hz_entry}")
     return
 
 
@@ -217,15 +223,27 @@ def print_topics_and_types(reader: AnyReader, col_width: int, indent: str = ""):
 
 
 def compute_hz_for_topic(reader: AnyReader, topic: str) -> float:
+    # Extract bag timestamps and header timestamps (if they are present) for the topic
     header_timestamps_ns_list, bag_timestamps_ns_list = extract_timestamps_for_topic(reader, topic)
-    sec = float(header_timestamps_ns_list[-1] - header_timestamps_ns_list[0]) / 1_000_000_000
-    hz = len(header_timestamps_ns_list) / sec
+    # Select which timestamps to use for the hz computation (header timestamps preferred, bag timestamps as fallback)
+    timestamps = header_timestamps_ns_list if len(header_timestamps_ns_list) > 0 else bag_timestamps_ns_list
+    # Compute hz if the selected timestamps are not empty
+    if len(timestamps) > 0:
+        sec = float(timestamps[-1] - timestamps[0]) / 1_000_000_000
+        if sec > 0:
+            hz = len(timestamps) / sec
+        else:
+            hz = 0.0
+    else:
+        hz = np.nan
     return hz
 
 
 def extract_timestamps_for_topic(reader: AnyReader, topic: str) -> Tuple[List[int], List[int]]:
     topic_info = reader.topics[topic]
-    assert len(topic_info.connections) == 1
+    # Only one connection per topic is supported by this function
+    if len(topic_info.connections) != 1:
+        return [], []
     connection = topic_info.connections[0]
 
     header_timestamps_ns_list: List[int] = []
@@ -326,6 +344,8 @@ def _create_time_entry(timestamp_ns: np.int64) -> str:
 
 
 def get_time_gaps_entry(header_timestamps_ns: np.ndarray) -> str:
+    if len(header_timestamps_ns) < 2:
+        return "None - not enough timestamps."
     gaps = np.diff(header_timestamps_ns)
     gap_mean_sec = np.mean(gaps) * 1e-9
     gap_min_sec = np.min(gaps) * 1e-9
@@ -463,8 +483,66 @@ def construct_cam_info_entry(msg: sensor_msgs__msg__CameraInfo) -> str:
 ########################################################################################################################
 
 
+def print_other_topic_details(topic: str, reader: AnyReader, col_width: int, indent: str = "") -> None:
+    topic_info = reader.topics[topic]
+
+    print(f"{indent}{'Topic:':<{col_width}}{topic}")
+    print(f"{indent}{'Msg type:':<{col_width}}{topic_info.msgtype}")
+    print(f"{indent}{'Num messages:':<{col_width}}{topic_info.msgcount}")
+
+    # Handle multiple connections
+    if len(topic_info.connections) != 1:
+        print_multiple_connection_details(topic, reader, col_width, indent)
+        return
+
+    # Extract bag timestamps and header timestamps (if they are present) for the topic
+    header_timestamps_ns_list, bag_timestamps_ns_list = extract_timestamps_for_topic(reader, topic)
+    # Select which timestamps to use for the hz computation (header timestamps preferred, bag timestamps as fallback)
+    timestamps_ns = header_timestamps_ns_list if len(header_timestamps_ns_list) > 0 else bag_timestamps_ns_list
+    timestamps_ns = np.array(timestamps_ns, dtype=np.int64)
+    # TODO: Rename to timestamps_ns the other place where the same is done.
+
+    comment = "Header timestamps used." if len(header_timestamps_ns_list) > 0 else "Bag timestamps used."
+    comment = "No timestamps available." if len(timestamps_ns) == 0 else comment
+
+    if len(timestamps_ns) > 0:
+        duration = get_duration_entry(timestamps_ns)
+        start_time = get_start_time_entry(timestamps_ns)
+        end_time = get_end_time_entry(timestamps_ns)
+        time_gaps = get_time_gaps_entry(timestamps_ns)
+        print(f"{indent}{'Duration:':<{col_width}}{duration}")
+        print(f"{indent}{'Start time:':<{col_width}}{start_time}")
+        print(f"{indent}{'End time:':<{col_width}}{end_time}")
+        print(f"{indent}{'Time gaps:':<{col_width}}{time_gaps}")
+
+    print(f"{indent}{'Comment:':<{col_width}}{comment}")
+    return
+
+
+########################################################################################################################
+
+
+def print_multiple_connection_details(topic: str, reader: AnyReader, col_width: int, indent: str = "") -> None:
+    topic_info = reader.topics[topic]
+    num_connections = len(topic_info.connections)
+    print(f"{indent}{'Connections:':<{col_width}}{num_connections}")
+    if num_connections == 0:
+        return
+    print(f"{indent}{'Called IDs:':<{col_width}}")
+    for connection in topic_info.connections:
+        print(f"{indent}  {connection.ext.callerid}: {connection.msgcount} msgs")
+    return
+
+
+########################################################################################################################
+
+
 def print_remaining_topic_details(topic, reader: AnyReader, col_width: int, indent: str = "") -> None:
-    print_cam_info_topic_details(topic, reader, col_width, indent)
+    topic_info = reader.topics[topic]
+    if topic_info.msgtype == CAMINFO_MSGTYPE:
+        print_cam_info_topic_details(topic, reader, col_width, indent)
+    else:
+        print_other_topic_details(topic, reader, col_width, indent)
     return
 
 
